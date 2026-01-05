@@ -1,0 +1,412 @@
+﻿@page "/"
+@using Orion.Models
+@using Orion.Services
+@using System.Threading
+@inject SahisService OrionService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>SAHİS | Şahıs Bilgi Sistemi</PageTitle>
+
+<div class="dashboard-container">
+
+	<div class="header-bar">
+		<div class="brand">
+			<div class="brand-logo">
+				<i class="bi bi-shield-fill-check"></i>
+			</div>
+			<div class="brand-info">
+				<h1>SAHİS</h1>
+				<span>Şahıs Bilgi Sistemi</span>
+			</div>
+		</div>
+
+		<button class="theme-switch" @onclick="ToggleTheme" title="@(isDarkMode ? "Gündüz Modu" : "Gece Modu")">
+			@if (isDarkMode)
+			{
+				<i class="bi bi-sun-fill"></i>
+			}
+			else
+			{
+
+				<i class="bi bi-moon-stars-fill"></i>
+			}
+		</button>
+	</div>
+
+	<div class="search-card">
+		<div class="card-top">
+			<div class="card-title">
+				<i class="bi bi-search"></i> SORGULAMA KRİTERLERİ
+			</div>
+
+			<div class="mode-tabs">
+				<button class="tab-btn @(searchMode == SearchMode.Contains ? "active" : "")"
+						@onclick="() => searchMode = SearchMode.Contains">
+					GENİŞ KAPSAMLI
+				</button>
+				<button class="tab-btn @(searchMode == SearchMode.Exact ? "active" : "")"
+						@onclick="() => searchMode = SearchMode.Exact">
+					NOKTA ATIŞI
+				</button>
+			</div>
+		</div>
+
+		<div class="input-grid">
+			<div class="input-group">
+				<label>TC KİMLİK NO</label>
+				<input @bind="tc" @oninput="HandleTcInput" @onkeyup="HandleEnterKey" maxlength="11" placeholder="___________" type="tel" />
+			</div>
+			<div class="input-group">
+				<label>ANNE TC NO</label>
+				<input @bind="anneTc" @onkeyup="HandleEnterKey" maxlength="11" placeholder="___________" type="tel" />
+			</div>
+			<div class="input-group">
+				<label>BABA TC NO</label>
+				<input @bind="babaTc" @onkeyup="HandleEnterKey" maxlength="11" placeholder="___________" type="tel" />
+			</div>
+			<div class="input-group">
+				<label>GSM (BAŞINDA 0 OLMADAN)</label>
+				<input @bind="gsm" @onkeyup="HandleEnterKey" placeholder="5XX..." maxlength="10" type="tel" />
+			</div>
+
+			<div class="input-group">
+				<label>AD</label>
+				<input @bind="ad" @onkeyup="HandleEnterKey" placeholder="İSİM GİRİNİZ" />
+			</div>
+			<div class="input-group">
+				<label>SOYAD</label>
+				<input @bind="soyad" @onkeyup="HandleEnterKey" placeholder="SOYİSİM GİRİNİZ" />
+			</div>
+			<div class="input-group">
+				<label>İL (NÜFUS)</label>
+				<input @bind="il" @onkeyup="HandleEnterKey" placeholder="ÖRN: ANKARA" />
+			</div>
+			<div class="input-group">
+				<label>İLÇE</label>
+				<input @bind="ilce" @onkeyup="HandleEnterKey" placeholder="ÖRN: ÇANKAYA" />
+			</div>
+
+			<div class="input-group">
+				<label>ANNE ADI</label>
+				<input @bind="anne" @onkeyup="HandleEnterKey" />
+			</div>
+			<div class="input-group">
+				<label>BABA ADI</label>
+				<input @bind="baba" @onkeyup="HandleEnterKey" />
+			</div>
+			<div class="input-group">
+				<label>YAŞ (MİN)</label>
+				<input type="number" @bind="minYas" @onkeyup="HandleEnterKey" placeholder="0" min="0" max="150" />
+			</div>
+			<div class="input-group">
+				<label>YAŞ (MAKS)</label>
+				<input type="number" @bind="maxYas" @onkeyup="HandleEnterKey" placeholder="150" min="0" max="150" />
+			</div>
+
+			<div class="input-group">
+				<label>CİNSİYET</label>
+				<select @bind="cinsiyet" @onkeyup="HandleEnterKey">
+					<option value="Hepsi">HEPSİ</option>
+					<option value="E">ERKEK</option>
+					<option value="K">KADIN</option>
+				</select>
+			</div>
+		</div>
+
+		<div class="footer-actions">
+			@if (isSearching)
+			{
+				<button class="btn-main" disabled style="opacity:0.7">
+					<span class="spinner-border spinner-border-sm"></span> İŞLENİYOR...
+				</button>
+				<button class="btn-sec" @onclick="CancelSearch">İPTAL</button>
+			}
+			else
+			{
+				<button class="btn-sec" @onclick="Reset">TEMİZLE</button>
+				<button class="btn-main" @onclick="StartSearch">
+					<i class="bi bi-search"></i> SORGULA
+				</button>
+			}
+		</div>
+	</div>
+
+	@if (results != null && results.Any())
+	{
+		<div class="results-wrapper">
+			<div class="res-header">
+				<span>EŞLEŞEN KAYITLAR: <strong style="color:var(--text-main)">@totalCount</strong></span>
+				<span>GÖSTERİLEN: @results.Count</span>
+			</div>
+
+			@foreach (var person in results)
+			{
+				<div class="res-card" @onclick="() => ShowDetails(person)">
+					<div class="res-icon"><i class="bi bi-person-lines-fill"></i></div>
+					<div class="res-name">@person.FullName</div>
+					<div class="res-tc">@person.Tc</div>
+					<div class="res-loc"><i class="bi bi-geo-alt-fill"></i> @person.Lokasyon</div>
+					<div class="res-loc" style="justify-content:flex-end;"><i class="bi bi-arrow-right-short" style="font-size:1.5rem"></i></div>
+				</div>
+			}
+
+			<div class="footer-actions" style="justify-content:center; border:none; margin-top:10px;">
+				<button class="btn-sec" disabled="@(currentPage == 1)" @onclick="() => ChangePage(currentPage - 1)">
+					<i class="bi bi-chevron-left"></i>
+				</button>
+				<span style="display:flex; align-items:center; font-weight:bold; padding:0 15px; font-family:var(--font-data)">
+					@currentPage
+				</span>
+				<button class="btn-sec"
+						disabled="@(totalCount <= 1000 && currentPage == totalPages || results.Count == 0)"
+						@onclick="() => ChangePage(currentPage + 1)">
+					<i class="bi bi-chevron-right"></i>
+				</button>
+			</div>
+		</div>
+	}
+	else if (searchPerformed && !isSearching)
+	{
+		<div style="text-align:center; padding:50px; color:var(--text-muted);">
+			<i class="bi bi-folder-x" style="font-size:3rem; opacity:0.3;"></i>
+			<p style="margin-top:15px; font-weight:500;">KRİTERLERE UYGUN KAYIT BULUNAMADI.</p>
+		</div>
+	}
+
+</div>
+
+@if (selectedPerson != null)
+{
+	<div class="modal-overlay" @onclick="CloseModal">
+		<div class="dossier" @onclick:stopPropagation>
+			<div class="dossier-head">
+				<h3><i class="bi bi-person-vcard"></i> @selectedPerson.FullName</h3>
+				<button style="background:none; border:none; color:var(--text-muted); font-size:1.5rem; cursor:pointer;" @onclick="CloseModal">&times;</button>
+			</div>
+
+			<div class="dossier-content">
+				<div class="info-grid">
+					<div class="info-item">
+						<label>TC KİMLİK NO</label>
+						<span style="color:var(--accent); letter-spacing:1px;">@selectedPerson.Tc</span>
+					</div>
+
+					<div class="info-item">
+						<label>UYRUK / CİNSİYET</label>
+						<span>
+							@if (string.IsNullOrEmpty(selectedPerson.Uyruk))
+							{
+								@selectedPerson.Cinsiyet
+							}
+							else
+							{
+								@($"{selectedPerson.Uyruk} / {selectedPerson.Cinsiyet}")
+							}
+						</span>
+					</div>
+
+					<div class="info-item">
+						<label>DOĞUM TARİHİ</label>
+						<span>@selectedPerson.DogumBilgisi</span>
+					</div>
+
+					<div class="info-item">
+						<label>DURUMU / ÖLÜM TARİHİ</label>
+						@if (!string.IsNullOrEmpty(selectedPerson.OlumTarihi) && selectedPerson.OlumTarihi != "-")
+						{
+							<span style="color:#dc2626; font-weight:700;">VEFAT (@selectedPerson.OlumTarihi)</span>
+						}
+						else
+						{
+							<span style="color:var(--status-ok);">SAĞ</span>
+						}
+					</div>
+
+					<div class="info-item">
+						<label>DOĞUM YERİ</label>
+						<span>@selectedPerson.DogumYeri</span>
+					</div>
+
+					<div class="info-item">
+						<label>MEDENİ HAL</label>
+						<span>@selectedPerson.MedeniHal</span>
+					</div>
+
+					<div class="info-item">
+						<label>NÜFUS İL / İLÇE</label>
+						<span>@selectedPerson.NufusIl / @selectedPerson.NufusIlce</span>
+					</div>
+
+					<div class="info-item">
+						<label>NÜFUS KÖY / MAHALLE</label>
+						<span>@selectedPerson.NufusKoy</span>
+					</div>
+
+					<div class="info-item">
+						<label>ANNE ADI / TC</label>
+						<span>
+							@selectedPerson.AnneBaba.Split('/')[0].Trim() <br />
+							@if (selectedPerson.AnneTc.HasValue && selectedPerson.AnneTc != 0)
+							{
+								<small class="click-link" @onclick="() => SearchParent(selectedPerson.AnneTc.Value)">
+									<i class="bi bi-search"></i> @selectedPerson.AnneTc
+								</small>
+							}
+							else
+							{
+
+								<small>-</small>
+							}
+						</span>
+					</div>
+
+					<div class="info-item">
+						<label>BABA ADI / TC</label>
+						<span>
+							@selectedPerson.AnneBaba.Split('/')[1].Trim() <br />
+							@if (selectedPerson.BabaTc.HasValue && selectedPerson.BabaTc != 0)
+							{
+								<small class="click-link" @onclick="() => SearchParent(selectedPerson.BabaTc.Value)">
+									<i class="bi bi-search"></i> @selectedPerson.BabaTc
+								</small>
+							}
+							else
+							{
+
+								<small>-</small>
+							}
+						</span>
+					</div>
+
+					<div class="info-item" style="grid-column: span 2;">
+						<label>İKAMETGAH ADRESİ</label>
+						<span style="font-size:0.95rem; line-height:1.4;">@selectedPerson.Adres</span>
+					</div>
+
+					@if (!string.IsNullOrEmpty(selectedPerson.VergiNo) && selectedPerson.VergiNo != "-")
+					{
+						<div class="info-item" style="grid-column: span 2;">
+							<label>VERGİ KİMLİK NO</label>
+							<span class="vergi-badge"><i class="bi bi-bank"></i> @selectedPerson.VergiNo</span>
+						</div>
+					}
+
+					<div class="info-item" style="grid-column: span 2;">
+						<label>GSM KAYITLARI (@selectedPerson.Telefonlar.Count)</label>
+
+						@if (selectedPerson.Telefonlar.Any())
+						{
+							<div class="gsm-vault">
+								@foreach (var t in selectedPerson.Telefonlar)
+								{
+									<div class="gsm-chip">
+										<i class="bi bi-phone"></i> @t
+									</div>
+								}
+							</div>
+						}
+						else
+						{
+							<span style="border:none; color:var(--text-muted); font-style:italic;">Kayıt bulunamadı.</span>
+						}
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+@code {
+	private bool isDarkMode = false; // Varsayılan Light Mode
+
+	private string? tc, ad, soyad, il, ilce, anne, baba, gsm;
+	private string? anneTc, babaTc;
+	private string cinsiyet = "Hepsi";
+	private int? minYas, maxYas;
+	private SearchMode searchMode = SearchMode.Contains;
+	private List<PersonDto> results = new();
+	private PersonDto? selectedPerson;
+	private int totalCount, currentPage = 1, totalPages;
+	private bool isSearching = false, searchPerformed = false;
+	private CancellationTokenSource? cts;
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			var storedTheme = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "theme");
+			if (!string.IsNullOrEmpty(storedTheme))
+			{
+				isDarkMode = storedTheme == "dark";
+				await JSRuntime.InvokeVoidAsync("themeManager.setTheme", isDarkMode ? "dark" : "light");
+				StateHasChanged();
+			}
+		}
+	}
+
+	private async Task ToggleTheme()
+	{
+		isDarkMode = !isDarkMode;
+		await JSRuntime.InvokeVoidAsync("themeManager.setTheme", isDarkMode ? "dark" : "light");
+	}
+
+	private async Task HandleEnterKey(KeyboardEventArgs e)
+	{
+		if (e.Key == "Enter") await StartSearch();
+	}
+
+	private async Task HandleTcInput(ChangeEventArgs e)
+	{
+		tc = e.Value?.ToString();
+		if (!string.IsNullOrEmpty(tc) && tc.Length == 11) await StartSearch();
+	}
+
+	private async Task StartSearch() { currentPage = 1; await PerformSearch(); }
+	private async Task ChangePage(int page) { currentPage = page; await PerformSearch(); }
+
+	// --- Ebeveyn Sorgulama ---
+	private async Task SearchParent(long parentTc)
+	{
+		CloseModal();
+		Reset();
+		tc = parentTc.ToString();
+		await StartSearch();
+	}
+
+	private async Task PerformSearch()
+	{
+		if (isSearching) return;
+		isSearching = true; searchPerformed = false; results.Clear(); selectedPerson = null;
+		cts = new CancellationTokenSource();
+		try
+		{
+			var result = await OrionService.SearchAsync(
+				tc, ad, soyad, il, ilce, anne, baba,
+				anneTc, babaTc,
+				gsm,
+				cinsiyet, minYas, maxYas,
+				searchMode, currentPage, 20, cts.Token);
+
+			results = result.Data; totalCount = result.TotalCount;
+			totalPages = (int)Math.Ceiling(totalCount / 20.0); searchPerformed = true;
+		}
+		catch (OperationCanceledException) { }
+		catch (Exception ex) { Console.WriteLine($"Sistem Hatası: {ex.Message}"); }
+		finally { isSearching = false; cts?.Dispose(); cts = null; }
+	}
+
+	private void CancelSearch() { cts?.Cancel(); isSearching = false; }
+
+	private void Reset()
+	{
+		tc = ad = soyad = il = ilce = anne = baba = gsm = null;
+		anneTc = babaTc = null;
+		cinsiyet = "Hepsi"; minYas = maxYas = null;
+		results.Clear(); searchPerformed = false; currentPage = 1;
+		isSearching = false; selectedPerson = null;
+	}
+
+	private void ShowDetails(PersonDto person) => selectedPerson = person;
+	private void CloseModal() => selectedPerson = null;
+}
