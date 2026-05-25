@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Orion.Data.Context;
 using Orion.Data.Entities;
 using Orion.Models;
@@ -8,10 +8,12 @@ namespace Orion.Services
     public class SahisService
     {
         private readonly IDbContextFactory<SahisDbContext> _contextFactory;
+        private readonly ILogger<SahisService> _logger;
 
-        public SahisService(IDbContextFactory<SahisDbContext> contextFactory)
+        public SahisService(IDbContextFactory<SahisDbContext> contextFactory, ILogger<SahisService> logger)
         {
             _contextFactory = contextFactory;
+            _logger = logger;
         }
 
         public async Task<(List<PersonDto> Data, int TotalCount)> SearchAsync(
@@ -30,6 +32,8 @@ namespace Orion.Services
             using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
             var query = context.Citizens.AsNoTracking().AsQueryable();
             bool isFiltered = false;
+
+            _logger.LogInformation("Yeni Sorgu Yapıldı: TC={Tc}, Ad={Ad}, Soyad={Soyad}, İl={Il}, İlçe={Ilce}", tc, ad, soyad, il, ilce);
 
             string Normalize(string s) => s.ToLower(new System.Globalization.CultureInfo("tr-TR"))
                 .Replace('ğ', 'g').Replace('ü', 'u').Replace('ş', 's')
@@ -152,35 +156,75 @@ namespace Orion.Services
                 .OrderBy(p => p.Ad).ThenBy(p => p.Soyad)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(p => new PersonDto
-                {
-                    Tc = p.Tc,
-                    FullName = $"{p.Ad} {p.Soyad}",
-
-                    AnneTc = p.AnneTc,
-                    BabaTc = p.BabaTc,
-                    OlumTarihi = p.OlumTarihi.HasValue ? p.OlumTarihi.Value.ToString("dd.MM.yyyy") : "-",
-                    NufusKoy = p.NufusKoy ?? "-",
-
-                    AnneBaba = $"{p.AnneAdi} / {p.BabaAdi}",
-                    DogumBilgisi = p.DogumTarihi.HasValue ? p.DogumTarihi.Value.ToString("dd.MM.yyyy") : "",
-                    DogumYeri = p.DogumYeri ?? "-",
-                    NufusIl = p.NufusIl ?? "-",
-                    NufusIlce = p.NufusIlce ?? "-",
-                    Lokasyon = $"{p.NufusIl} / {p.NufusIlce}",
-                    Cinsiyet = p.Cinsiyet,
-                    MedeniHal = p.MedeniHal == "EVLI" ? "EVLİ" :
-                               (p.MedeniHal == "BOSANMIS" ? "BOŞANMIŞ" : p.MedeniHal),
-                    Adres = p.Ikametgah ?? "Adres Bilgisi Yok",
-                    Uyruk = (p.Uyruk == null || p.Uyruk == "[null]" || p.Uyruk == "\\N") ? "" : p.Uyruk,
-                    VergiNo = p.VergiNo ?? "-",
-                    Telefonlar = p.GsmListesi != null
-                        ? p.GsmListesi.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList()
-                        : new List<string>()
-                })
+                .Select(MapToDto)
                 .ToListAsync(cancellationToken);
 
             return (result, hasMore ? maxLimit + 1 : totalCount);
+        }
+
+        public static readonly System.Linq.Expressions.Expression<Func<Citizen, PersonDto>> MapToDto = p => new PersonDto
+        {
+            Tc = p.Tc,
+            FullName = $"{p.Ad} {p.Soyad}",
+
+            AnneTc = p.AnneTc,
+            BabaTc = p.BabaTc,
+            OlumTarihi = p.OlumTarihi.HasValue ? p.OlumTarihi.Value.ToString("dd.MM.yyyy") : "-",
+            NufusKoy = p.NufusKoy ?? "-",
+
+            AnneBaba = $"{p.AnneAdi} / {p.BabaAdi}",
+            DogumBilgisi = p.DogumTarihi.HasValue ? p.DogumTarihi.Value.ToString("dd.MM.yyyy") : "",
+            DogumYeri = p.DogumYeri ?? "-",
+            NufusIl = p.NufusIl ?? "-",
+            NufusIlce = p.NufusIlce ?? "-",
+            Lokasyon = $"{p.NufusIl} / {p.NufusIlce}",
+            Cinsiyet = p.Cinsiyet,
+            MedeniHal = p.MedeniHal == "EVLI" ? "EVLİ" :
+                       (p.MedeniHal == "BOSANMIS" ? "BOŞANMIŞ" : p.MedeniHal),
+            Adres = p.Ikametgah ?? "Adres Bilgisi Yok",
+            Uyruk = (p.Uyruk == null || p.Uyruk == "[null]" || p.Uyruk == "\\N") ? "" : p.Uyruk,
+            VergiNo = p.VergiNo ?? "-",
+            Telefonlar = p.GsmListesi != null
+                ? p.GsmListesi.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList()
+                : new List<string>()
+        };
+
+        public async Task<FamilyTreeDto?> GetFamilyTreeAsync(long tc, CancellationToken cancellationToken = default)
+        {
+            using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            var query = context.Citizens.AsNoTracking();
+
+            var targetPerson = await query.Where(p => p.Tc == tc).Select(MapToDto).FirstOrDefaultAsync(cancellationToken);
+            if (targetPerson == null) return null;
+
+            var tree = new FamilyTreeDto { Person = targetPerson };
+
+            // 1. Ebeveynleri Bul (Anne / Baba)
+            var parentTcs = new List<long>();
+            if (targetPerson.AnneTc.HasValue && targetPerson.AnneTc > 0) parentTcs.Add(targetPerson.AnneTc.Value);
+            if (targetPerson.BabaTc.HasValue && targetPerson.BabaTc > 0) parentTcs.Add(targetPerson.BabaTc.Value);
+
+            if (parentTcs.Any())
+            {
+                tree.Parents = await query.Where(p => parentTcs.Contains(p.Tc)).Select(MapToDto).ToListAsync(cancellationToken);
+            }
+
+            // 2. Çocukları Bul (BabaTc == tc veya AnneTc == tc)
+            tree.Children = await query.Where(p => p.BabaTc == tc || p.AnneTc == tc).Select(MapToDto).ToListAsync(cancellationToken);
+
+            // 3. Kardeşleri Bul (Aynı Anne veya Aynı Baba, kendisi hariç)
+            if (parentTcs.Any())
+            {
+                var anneTc = targetPerson.AnneTc;
+                var babaTc = targetPerson.BabaTc;
+
+                tree.Siblings = await query.Where(p => p.Tc != tc &&
+                                           ((anneTc.HasValue && anneTc > 0 && p.AnneTc == anneTc) ||
+                                            (babaTc.HasValue && babaTc > 0 && p.BabaTc == babaTc)))
+                                           .Select(MapToDto).ToListAsync(cancellationToken);
+            }
+
+            return tree;
         }
     }
 }

@@ -1,0 +1,240 @@
+@using Orion.Models
+@using Orion.Services
+@inject SahisService OrionService
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" style="z-index: 9999; backdrop-filter: blur(5px);" @onclick="Close">
+        <div class="dossier family-tree-modal" style="max-width: 90vw; width: 1200px; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div class="dossier-head" style="position: sticky; top: 0; background: var(--bg-card); z-index: 10;">
+                <h3><i class="bi bi-diagram-3-fill"></i> Soy Ağacı</h3>
+                <div>
+                    <button class="btn-sec" style="margin-right: 10px;" @onclick="ExportPdf"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+                    <button style="background:none; border:none; color:var(--text-muted); font-size:1.5rem; cursor:pointer;" @onclick="Close">&times;</button>
+                </div>
+            </div>
+
+            <div class="dossier-content" id="family-tree-content">
+                @if (isLoading)
+                {
+                    <div style="text-align:center; padding: 50px;">
+                        <span class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></span>
+                        <p style="margin-top: 15px;">Soy Ağacı Yükleniyor...</p>
+                    </div>
+                }
+                else if (treeData != null)
+                {
+                    <div class="tree-container">
+                        <!-- Ebeveynler -->
+                        @if (treeData.Parents.Any())
+                        {
+                            <div class="tree-tier">
+                                <h4 class="tier-title">ÜST SOY (EBEVEYNLER)</h4>
+                                <div class="nodes-row">
+                                    @foreach (var p in treeData.Parents)
+                                    {
+                                        <div class="tree-node parent-node" @onclick="() => SelectPerson(p.Tc)">
+                                            <div class="node-icon"><i class="bi bi-person-heart"></i></div>
+                                            <div class="node-name">@p.FullName</div>
+                                            <div class="node-tc">@p.Tc</div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="tree-connector"><i class="bi bi-arrow-down"></i></div>
+                        }
+
+                        <!-- Kendisi ve Kardeşler -->
+                        <div class="tree-tier main-tier">
+                            <h4 class="tier-title">KENDİSİ VE KARDEŞLERİ</h4>
+                            <div class="nodes-row siblings-row">
+                                @foreach (var s in treeData.Siblings)
+                                {
+                                    <div class="tree-node sibling-node" @onclick="() => SelectPerson(s.Tc)">
+                                        <div class="node-icon"><i class="bi bi-person"></i></div>
+                                        <div class="node-name">@s.FullName</div>
+                                        <div class="node-tc">@s.Tc</div>
+                                    </div>
+                                }
+                                
+                                <div class="tree-node target-node">
+                                    <div class="node-badge">HEDEF KİŞİ</div>
+                                    <div class="node-icon"><i class="bi bi-person-bounding-box"></i></div>
+                                    <div class="node-name">@treeData.Person.FullName</div>
+                                    <div class="node-tc">@treeData.Person.Tc</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Çocuklar -->
+                        @if (treeData.Children.Any())
+                        {
+                            <div class="tree-connector"><i class="bi bi-arrow-down"></i></div>
+                            <div class="tree-tier">
+                                <h4 class="tier-title">ALT SOY (ÇOCUKLAR)</h4>
+                                <div class="nodes-row">
+                                    @foreach (var c in treeData.Children)
+                                    {
+                                        <div class="tree-node child-node" @onclick="() => SelectPerson(c.Tc)">
+                                            <div class="node-icon"><i class="bi bi-person-arms-up"></i></div>
+                                            <div class="node-name">@c.FullName</div>
+                                            <div class="node-tc">@c.Tc</div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-warning">Veri bulunamadı.</div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .tree-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px 0;
+    }
+    .tree-tier {
+        background: var(--bg-main);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 20px;
+        width: 100%;
+        margin-bottom: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .main-tier {
+        border-color: var(--accent);
+        box-shadow: 0 0 15px rgba(37, 99, 235, 0.2);
+    }
+    .tier-title {
+        text-align: center;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        letter-spacing: 2px;
+        margin-bottom: 20px;
+        font-weight: 600;
+    }
+    .nodes-row {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+    .tree-node {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+        min-width: 180px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+    .tree-node:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        border-color: var(--accent);
+    }
+    .target-node {
+        border: 2px solid var(--accent);
+        background: rgba(37, 99, 235, 0.05);
+        transform: scale(1.05);
+    }
+    .target-node:hover {
+        transform: scale(1.05);
+        cursor: default;
+    }
+    .node-badge {
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--accent);
+        color: white;
+        font-size: 0.7rem;
+        padding: 2px 10px;
+        border-radius: 10px;
+        font-weight: bold;
+    }
+    .node-icon {
+        font-size: 2rem;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+    }
+    .target-node .node-icon {
+        color: var(--accent);
+    }
+    .node-name {
+        font-weight: bold;
+        font-size: 1.1rem;
+        margin-bottom: 5px;
+    }
+    .node-tc {
+        font-family: var(--font-data);
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+    .tree-connector {
+        font-size: 1.5rem;
+        color: var(--text-muted);
+        margin: 5px 0;
+    }
+</style>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<long> OnPersonSelected { get; set; }
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    public bool IsVisible { get; private set; }
+    private bool isLoading = false;
+    private FamilyTreeDto? treeData;
+
+    public async Task OpenAsync(long tc)
+    {
+        IsVisible = true;
+        StateHasChanged();
+        await LoadTree(tc);
+    }
+
+    private async Task LoadTree(long tc)
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        treeData = await OrionService.GetFamilyTreeAsync(tc);
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task Close()
+    {
+        IsVisible = false;
+        treeData = null;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task SelectPerson(long tc)
+    {
+        IsVisible = false;
+        treeData = null;
+        await OnPersonSelected.InvokeAsync(tc);
+    }
+
+    private async Task ExportPdf()
+    {
+        // Html2Pdf gibi bir js ile dışa aktarım sağlanabilir.
+        await JS.InvokeVoidAsync("printDiv", "family-tree-content");
+    }
+}

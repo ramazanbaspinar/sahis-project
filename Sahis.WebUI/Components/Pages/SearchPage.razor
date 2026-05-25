@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @using Orion.Models
 @using Orion.Services
 @using System.Threading
@@ -137,7 +137,10 @@
 		<div class="results-wrapper">
 			<div class="res-header">
 				<span>EŞLEŞEN KAYITLAR: <strong style="color:var(--text-main)">@totalCount</strong></span>
-				<span>GÖSTERİLEN: @results.Count</span>
+				<div>
+					<button class="btn-sec" style="margin-right: 10px;" @onclick="ExportToCsv"><i class="bi bi-filetype-csv"></i> CSV İNDİR</button>
+					<span>GÖSTERİLEN: @results.Count</span>
+				</div>
 			</div>
 
 			@foreach (var person in results)
@@ -235,7 +238,12 @@
 
 					<div class="info-item">
 						<label>NÜFUS İL / İLÇE</label>
-						<span>@selectedPerson.NufusIl / @selectedPerson.NufusIlce</span>
+						<span>
+							@selectedPerson.NufusIl / @selectedPerson.NufusIlce
+							<a href="https://www.google.com/maps/search/?api=1&query=@(Uri.EscapeDataString($"{selectedPerson.NufusIl} {selectedPerson.NufusIlce} Türkiye"))" target="_blank" class="click-link" style="margin-left: 10px;">
+								<i class="bi bi-map-fill"></i> Harita
+							</a>
+						</span>
 					</div>
 
 					<div class="info-item">
@@ -281,7 +289,15 @@
 
 					<div class="info-item" style="grid-column: span 2;">
 						<label>İKAMETGAH ADRESİ</label>
-						<span style="font-size:0.95rem; line-height:1.4;">@selectedPerson.Adres</span>
+						<span style="font-size:0.95rem; line-height:1.4;">
+							@selectedPerson.Adres
+							@if(!string.IsNullOrEmpty(selectedPerson.Adres) && selectedPerson.Adres != "Adres Bilgisi Yok")
+							{
+								<a href="https://www.google.com/maps/search/?api=1&query=@(Uri.EscapeDataString(selectedPerson.Adres + " Türkiye"))" target="_blank" class="click-link" style="display:block; margin-top: 5px;">
+									<i class="bi bi-geo-alt-fill"></i> Adresi Haritada Gör
+								</a>
+							}
+						</span>
 					</div>
 
 					@if (!string.IsNullOrEmpty(selectedPerson.VergiNo) && selectedPerson.VergiNo != "-")
@@ -312,10 +328,21 @@
 						}
 					</div>
 				</div>
+				
+				<div class="dossier-footer" style="margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; gap: 15px;">
+					<button class="btn-sec" style="flex: 1; padding: 12px; font-weight: 600; font-size: 1rem; border-radius: 8px; transition: all 0.2s;" @onclick="FindRelatives" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='none';">
+						<i class="bi bi-people-fill" style="margin-right: 8px; font-size: 1.2rem; color: var(--accent);"></i> POTANSİYEL AKRABALARI BUL
+					</button>
+					<button class="btn-main" style="flex: 1; padding: 12px; font-weight: 600; font-size: 1rem; border-radius: 8px; transition: all 0.2s;" @onclick="OpenFamilyTree" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='none';">
+						<i class="bi bi-diagram-3-fill" style="margin-right: 8px; font-size: 1.2rem;"></i> SOY AĞACINI GÖRÜNTÜLE
+					</button>
+				</div>
 			</div>
 		</div>
 	</div>
 }
+
+<FamilyTreeViewer @ref="familyTreeViewer" OnPersonSelected="SearchPersonFromTree" />
 
 @code {
 	private bool isDarkMode = false; // Varsayılan Light Mode
@@ -330,6 +357,7 @@
 	private int totalCount, currentPage = 1, totalPages;
 	private bool isSearching = false, searchPerformed = false;
 	private CancellationTokenSource? cts;
+	private FamilyTreeViewer? familyTreeViewer;
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
 	{
@@ -365,12 +393,20 @@
 	private async Task StartSearch() { currentPage = 1; await PerformSearch(); }
 	private async Task ChangePage(int page) { currentPage = page; await PerformSearch(); }
 
-	// --- Ebeveyn Sorgulama ---
+	// --- Ebeveyn/Akraba Sorgulama ---
 	private async Task SearchParent(long parentTc)
 	{
 		CloseModal();
 		Reset();
 		tc = parentTc.ToString();
+		await StartSearch();
+	}
+
+	private async Task SearchPersonFromTree(long targetTc)
+	{
+		CloseModal();
+		Reset();
+		tc = targetTc.ToString();
 		await StartSearch();
 	}
 
@@ -409,4 +445,44 @@
 
 	private void ShowDetails(PersonDto person) => selectedPerson = person;
 	private void CloseModal() => selectedPerson = null;
+
+	private async Task OpenFamilyTree()
+	{
+		if (selectedPerson != null && familyTreeViewer != null)
+		{
+			await familyTreeViewer.OpenAsync(selectedPerson.Tc);
+		}
+	}
+
+	private async Task ExportToCsv()
+	{
+		if (results == null || !results.Any()) return;
+
+		var sb = new System.Text.StringBuilder();
+		sb.AppendLine("TC;Ad Soyad;Cinsiyet;DogumTarihi;Lokasyon;AnneBaba");
+
+		foreach (var p in results)
+		{
+			sb.AppendLine($"{p.Tc};{p.FullName};{p.Cinsiyet};{p.DogumBilgisi};{p.Lokasyon};{p.AnneBaba}");
+		}
+
+		await JSRuntime.InvokeVoidAsync("downloadCsv", "sorgu_sonuclari.csv", sb.ToString());
+	}
+
+	private async Task FindRelatives()
+	{
+		if (selectedPerson == null) return;
+		var tempSoyad = selectedPerson.FullName.Split(' ').LastOrDefault() ?? "";
+		var tempIl = selectedPerson.NufusIl;
+		var tempIlce = selectedPerson.NufusIlce;
+
+		CloseModal();
+		Reset();
+
+		soyad = tempSoyad;
+		il = tempIl;
+		ilce = tempIlce;
+		
+		await StartSearch();
+	}
 }
